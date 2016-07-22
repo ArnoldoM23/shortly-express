@@ -2,7 +2,8 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var request = require('request');
+var bcrypt = require('bcrypt-nodejs');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -22,26 +23,29 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
 
+var session = require('express-session');
+app.use(session({
+  secret: 'This is a secret',
+  resave: false,
+  saveUninitialized: true
+}));
 
-app.get('/', 
-function(req, res) {
+app.get('/', util.checkUser, function(req, res) {
   res.render('index');
 });
 
-app.get('/create', 
-function(req, res) {
+app.get('/create',util.checkUser, function(req, res) {
   res.render('index');
 });
 
-app.get('/links', 
-function(req, res) {
+app.get('/links', util.checkUser, function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.send(200, links.models);
   });
 });
 
-app.post('/links', 
-function(req, res) {
+app.post('/links', util.checkUser ,function(req, res) {
+  console.log('hello from link post', req)
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
@@ -78,7 +82,57 @@ function(req, res) {
 // Write your dedicated authentication routes here
 // e.g. login, logout, etc.
 /************************************************************/
+app.get('/login',function(req, res){
+  res.render('login')
+});
 
+app.get('/signup',function(req, res){
+  res.render('signup')
+});
+
+
+app.post('/signup',function(req, res){
+  var username = req.body.username;
+  var password = req.body.password;
+
+  new User({username: username}).fetch().then(function(user){
+    if(!user){
+      bcrypt.hash(password, null, null, function(hash){
+        Users.create({
+          username: username,
+          password: hash
+        }).then(function(user){
+            util.createSession(req, res, user);
+        });
+      });
+    }else{
+      console.log('Username already exist try again');
+      res.redirect('/signup');
+    }
+  });
+});
+
+
+app.post('/login',function(req, res){
+  var username = req.body.username;
+  var password = req.body.password;
+
+  new User({username: username}).fetch().then(function(user){
+    if(!user){// if username does not exist
+       // redirect to login
+       res.redirect('/login');
+   } // if username exist 
+      // compare password
+    bcrypt.compare(password, user.get('password'), function(err, match){
+      if (match) { //if they match 
+        // redirect to index
+        app.createSession(req, res, user);
+      }// if not 
+        // redirect to login
+        res.redirect('/login');
+    });
+  });
+});
 
 
 /************************************************************/
